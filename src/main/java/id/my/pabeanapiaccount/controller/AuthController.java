@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.logging.Logger;
 
-@CrossOrigin
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
