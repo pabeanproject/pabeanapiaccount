@@ -1,0 +1,127 @@
+name: CI & CD Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: "temurin"
+          java-version: "21"
+          cache: "gradle"
+
+      - name: Build with Gradle
+        run: chmod +x ./gradlew && ./gradlew build
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-app
+          path: build/libs/*.jar
+
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:latest
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Set up environment
+        run: |
+          export GRADLE_USER_HOME=$HOME/.gradle
+          export SPRING_PROFILES_ACTIVE=test
+
+      - name: Test with Gradle
+        run: |
+          gradle check --info --stacktrace
+          gradle test
+          gradle jacocoTestReport
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-results
+          path: build/test-results
+
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: built-app
+          path: build/libs/
+
+      - name: Check Artifact
+        run: ls build/libs/
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+
+      - name: Build and push Docker image
+        run: |
+          docker build --build-arg PRODUCTION=${{ secrets.PRODUCTION }} \
+                       --build-arg JDBC_DATABASE_PASSWORD=${{ secrets.JDBC_DATABASE_PASSWORD }} \
+                       --build-arg JDBC_DATABASE_URL=${{ secrets.JDBC_DATABASE_URL }} \
+                       --build-arg JDBC_DATABASE_USERNAME=${{ secrets.JDBC_DATABASE_USERNAME }} \
+                       -t ${{ secrets.REGISTRY_USER }}/${{ secrets.IMAGE_NAME }}:${{ secrets.IMAGE_TAG }} .
+          docker push ${{ secrets.REGISTRY_USER }}/${{ secrets.IMAGE_NAME }}:${{ secrets.IMAGE_TAG }}
+  
+
+#  deploy:
+#    runs-on: ubuntu-latest
+#    needs: publish
+#
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v2
+#
+#      - name: Set up SSH
+#        uses: webfactory/ssh-agent@v0.5.3
+#        with:
+#          ssh-private-key: ${{ secrets.SSH_KEY }}
+#
+#      - name: Put SSH Key
+#        run: echo "${{ secrets.SSH_KEY }}" > gcp_ssh_key
+#
+#      - name: Deploy to GCP via Docker
+#        run: |
+#          ssh -o StrictHostKeyChecking=no -i gcp_ssh_key ${{ secrets.GCP_USERNAME }}@${{ secrets.GCP_STATIC_IP }} "
+#            sudo docker container rm -f ${{ secrets.CONTAINER_NAME }} || true &&
+#            sudo docker image rm -f ${{ secrets.REGISTRY_USER }}/${{ secrets.IMAGE_NAME }}:${{ secrets.IMAGE_TAG }} || true &&
+#            sudo docker run --name ${{ secrets.CONTAINER_NAME }} -d -p 80:8080 ${{ secrets.REGISTRY_USER }}/${{ secrets.IMAGE_NAME }}:${{ secrets.IMAGE_TAG }}"
