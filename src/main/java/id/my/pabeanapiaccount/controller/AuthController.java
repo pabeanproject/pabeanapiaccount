@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import java.util.logging.Logger;
 
-@CrossOrigin
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
@@ -23,6 +22,7 @@ public class AuthController {
     @Autowired
     private AuthService authService;
 
+    @CrossOrigin
     @PostMapping(path = "/login")
     public ResponseEntity<AuthenticationResponse> login (
             @RequestBody AuthenticationRequest request
@@ -31,6 +31,7 @@ public class AuthController {
         return ResponseEntity.ok(authService.authenticate(request));
     }
 
+    @CrossOrigin
     @PostMapping(path = "/register")
     public ResponseEntity<AuthenticationResponse> register (
             @RequestBody RegisterRequest request
